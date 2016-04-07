@@ -1,0 +1,204 @@
+#install.packages("C50")
+#install.packages("gmodels")
+FScore <- function(TP, FP, FN) {
+  TPS <- 2*TP
+  return ((TPS) / ((TPS)+FP+FN))
+}
+
+Accuracy <- function(TP, FP, TN, FN) {
+  return ((TP+TN)/(TP+TN+FP+FN))
+}
+
+ErrorRate <- function(TP, FP, TN, FN) {
+  return (1-((TP+TN)/(TP+TN+FP+FN)))
+}
+
+Precision <- function(TP, FP) {
+  return (TP/(TP+FP))
+}
+
+Recall <- function(TP, FN) {
+  return (TP/(TP+FN))
+}
+###############################################################################################
+## Setup directory
+###############################################################################################
+set.seed(12345)
+choosencol <- 2
+setwd('D:/Documents/Github/CT6007---')
+data <- read.csv("train.csv", na.strings=c("", "NA"), stringsAsFactors=FALSE)
+###############################################################################################
+## Runs through data set and deletes columns with 10% or more n/a values
+###############################################################################################
+NumRow <- as.numeric(nrow(data))
+NumCol <- as.numeric(ncol(data))
+
+if(choosencol > 1) {
+
+  if(choosencol != 2) {
+    data <- data[,c(choosencol,1:(choosencol-1),(choosencol+1):NumCol)]
+  } else {
+    data <- data[,c(2,1,3:NumCol)]
+  }
+}
+###############################################################################################
+## Runs through data set and deletes columns with 10% or more n/a values
+###############################################################################################
+delete <- c()
+
+for(i in 1:NumCol) {
+  percentage <- (sum(is.na(data[c(i)]))/NumRow)*100
+  
+  if(percentage > 10) {
+    delete <- union(delete, c(i))
+  }
+}
+
+data = data[-delete]
+data = na.omit(data)
+
+rm(i,NumRow,NumCol,delete,percentage)
+###############################################################################################
+## Converts none numeric columns into numeric column
+###############################################################################################
+NumRow <- as.numeric(nrow(data))
+NumCol <- as.numeric(ncol(data))
+
+for(i in 1:NumCol) {
+  
+  if(is.numeric(data[,i])!="TRUE") {
+
+    columnvalues <- unique(unlist(data[,i], use.names = FALSE))
+    
+      for(j in length(columnvalues):1) {
+        data[,i] <- sub(columnvalues[j], j, data[,i])
+      }
+      data[,i] <- as.numeric(data[,i])
+  }
+}
+
+rm(i,j,NumRow,NumCol,columnvalues)
+###############################################################################################
+## Runs through data set and deletes columns with 10% or more n/a values
+###############################################################################################
+NumRow <- as.numeric(nrow(data))
+NumCol <- as.numeric(ncol(data))
+
+delete <- c()
+
+for(i in 1:NumCol) {
+  percentage <- (sum(is.na(data[c(i)]))/NumRow)*100
+  
+  if(percentage > 10) {
+    delete <- union(delete, c(i))
+  }
+}
+
+data = data[-delete]
+data = na.omit(data)
+
+rm(i,NumRow,NumCol,delete,percentage)
+###############################################################################################
+## Normalize data
+###############################################################################################
+NumRow <- as.numeric(nrow(data))
+NumCol <- as.numeric(ncol(data))
+
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+for(i in 1:NumCol) {
+  data[i] <- as.data.frame(lapply(data[i], normalize))
+}
+
+rm(i,NumRow,NumCol)
+###############################################################################################
+## Runs through data set and deletes columns with 10% or more n/a values
+###############################################################################################
+NumRow <- as.numeric(nrow(data))
+NumCol <- as.numeric(ncol(data))
+
+delete <- c()
+
+for(i in 2:NumCol) {
+  correlation <- cov(data[1], data[i])
+  #print(correlation)
+  #print(coversion)
+  if(correlation < 0) {
+    delete <- union(delete, c(i))
+  }
+}
+
+data = data[-delete]
+
+rm(i,NumRow,NumCol,delete,correlation)
+###############################################################################################
+## Produce a model
+###############################################################################################
+library(C50)
+library(gmodels)
+library(class)
+
+NumRow <- as.numeric(nrow(data))
+NumCol <- as.numeric(ncol(data))
+
+data[,1] <- as.factor(data[,1])
+data <- data[,c(2:NumCol,1)]
+
+data_rand <- data[order(runif(NumRow)), ]
+
+data_train <- data_rand[1:ceiling(NumRow*0.9), ]
+data_test <- data_rand[ceiling((NumRow*0.9)+1):NumRow, ]
+
+data_train_col <- data_train[,NumCol]
+data_test_col <- data_test[,NumCol]
+###############################################################################################
+## Produce a model choose between 0-25 boosts
+###############################################################################################
+# Decision Tree model creation
+fscoreholder <- c()
+
+for(i in 1:5) {
+  data_model <- C5.0(data_train[-NumCol], data_train_col, trials = i*5)
+  data_pred <- predict(data_model, data_test)
+  ctable <- CrossTable(data_test_col, data_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+  
+  fscore <- FScore(ctable$t[1,1],ctable$t[1,2],ctable$t[2,1])
+  fscoreholder[i] <- fscore
+}
+
+limit <- (as.numeric(which.max(fscoreholder))*5)
+fscoreholder <- c()
+
+for(i in (limit-5):(limit+5)) {
+  data_model <- C5.0(data_train[-NumCol], data_train_col, trials = i)
+  data_pred <- predict(data_model, data_test)
+  ctable <- CrossTable(data_test_col, data_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+  
+  fscore <- FScore(ctable$t[1,1],ctable$t[1,2],ctable$t[2,1])
+  print(fscore)
+  fscoreholder[i] <- fscore
+}
+
+trialsvalue <- as.numeric(which.max(fscoreholder))
+
+data_model <- C5.0(data_train[-NumCol], data_train_col, trials = which.max(fscoreholder))
+data_pred <- predict(data_model, data_test)
+ctable <- ctable <- CrossTable(data_test_col, data_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+###############################################################################################
+### Cross table to plot results from Decision Tree model
+###############################################################################################
+#FScore
+print(fscore <- FScore(ctable$t[1,1],ctable$t[1,2],ctable$t[2,1]))
+#Accuracy
+print(Accuracy(ctable$t[1,1],ctable$t[1,2],ctable$t[2,2],ctable$t[2,1]))
+#Error Rate
+print(ErrorRate(ctable$t[1,1],ctable$t[1,2],ctable$t[2,2],ctable$t[2,1]))
+# Precision
+print(Precision(ctable$t[1,1], ctable$t[1,2]))
+# Recall
+print(Recall(ctable$t[1,1], ctable$t[2,1]))
+###############################################################################################
+
+###############################################################################################
